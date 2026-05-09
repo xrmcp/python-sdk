@@ -1,0 +1,1275 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://xrmcp.dinyad.com/schemas/v0.1/schema.json",
+    "title": "xrMCP v0.1.0 Schema",
+    "description": "Reusable schema library for xrMCP v0.1 documents. Consumers are expected to validate against specific definitions such as #/$defs/ToolManifest, #/$defs/ToolRegistration, and #/$defs/ToolBundle rather than against this root object directly.",
+    "$comment": "The root schema is intentionally neutral. This file acts as a library of reusable definitions under $defs.",
+    "type": "object",
+    "$defs": {
+        "TemplateString": {
+            "type": "string",
+            "minLength": 1,
+            "description": "String value that may include template expressions such as {{ticketKey}} or {{config.baseUrl}}. Template substitution happens before request execution. Unresolved template variables are an error."
+        },
+        "JsonPathExpression": {
+            "type": "string",
+            "pattern": "^\\$.*",
+            "description": "JSONPath expression rooted at the response body. Example: $.fields.summary"
+        },
+        "OverridePath": {
+            "type": "string",
+            "pattern": "^(config|execution)\\.[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$",
+            "description": "Install-time override path rooted at config.* or execution.*. These paths identify values that may be supplied or replaced by the runtime during registration."
+        },
+        "NetworkPermission": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\s]+$",
+            "description": "Allowed network destination expressed as a hostname, host:port, or host pattern. The runtime should interpret each entry as an allowlist item for outbound requests."
+        },
+        "SecretPermission": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_.-]{0,127}$",
+            "description": "Secret identifier the tool is allowed to reference at runtime, such as JIRA_TOKEN."
+        },
+        "TemplatedValue": {
+            "description": "Primitive or structured value whose string leaves may include template expressions. Template substitution happens before request execution. Unresolved template variables are an error.",
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/TemplateString"
+                },
+                {
+                    "type": "number"
+                },
+                {
+                    "type": "boolean"
+                },
+                {
+                    "type": "null"
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/TemplatedValue"
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/$defs/TemplatedValue"
+                    }
+                }
+            ]
+        },
+        "ToolManifest": {
+            "type": "object",
+            "description": "xrMCP tool manifest document. In this repository, VS Code maps files matching *.xrmcp.json to this definition for authoring and validation.",
+            "required": [
+                "schemaVersion",
+                "name",
+                "description",
+                "type",
+                "inputSchema",
+                "executions"
+            ],
+            "properties": {
+                "schemaVersion": {
+                    "type": "string",
+                    "const": "xrmcp.v0.1.0"
+                },
+                "name": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{2,63}$"
+                },
+                "displayName": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "type": {
+                    "$ref": "#/$defs/ToolType"
+                },
+                "inputSchema": {
+                    "$ref": "#/$defs/JsonSchema"
+                },
+                "outputSchema": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/JsonSchema"
+                        }
+                    ],
+                    "description": "Optional JSON Schema applied after any execution.response transformation. When execution.response is omitted or mode=raw, this schema describes the raw HTTP response body."
+                },
+                "outputMapper": {
+                    "$ref": "#/$defs/OutputMapper"
+                },
+                "configSchema": {
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/JsonSchema"
+                        }
+                    ],
+                    "description": "Optional JSON Schema describing install-time or runtime configuration values. When ToolRegistration.config is provided, the runtime should validate it against this schema."
+                },
+                "executions": {
+                    "type": "array",
+                    "description": "List of executions to perform. At least one execution is required.",
+                    "minItems": 1,
+                    "items": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/$defs/ApiExecution"
+                            }
+                        ]
+                    }
+                },
+                "permissions": {
+                    "$ref": "#/$defs/Permissions"
+                },
+                "overridable": {
+                    "type": "array",
+                    "description": "Install-time override paths that the runtime may supply or replace. Paths must be rooted at config.* or execution.*.",
+                    "items": {
+                        "$ref": "#/$defs/OverridePath"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                },
+                "metadata": {
+                    "$ref": "#/$defs/Metadata"
+                }
+            },
+            "additionalProperties": false
+        },
+        "ToolType": {
+            "type": "string",
+            "enum": [
+                "api"
+            ]
+        },
+        "ApiExecution": {
+            "type": "object",
+            "description": "Defines the structure of an API execution specification.",
+            "required": [
+                "type",
+                "request"
+            ],
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": "Unique identifier for the API execution specification. Should be a valid variable name, e.g. get_user_info. When outputMapper.mode is \"map\", every execution referenced in outputMapper.mapping[*].from must carry a unique id. This is not enforced by the schema but is a runtime requirement."
+                },
+                "order": {
+                    "type": "integer",
+                    "description": "Execution order for the API. APIs with lower order values are executed first. Order values must be unique across APIs."
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Human-readable name for the API execution specification."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Detailed description of the API execution specification."
+                },
+                "type": {
+                    "const": "api"
+                },
+                "request": {
+                    "$ref": "#/$defs/Request"
+                },
+                "processor": {
+                    "$ref": "#/$defs/ResponseProcessor"
+                }
+            },
+            "additionalProperties": false
+        },
+        "Url": {
+            "title": "Url",
+            "description": "If object, contains the complete broken-down URL for this request. If string, contains the literal request URL.",
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "raw": {
+                            "type": "string",
+                            "description": "The string representation of the request URL, including the protocol, host, path, hash, query parameter(s) and path variable(s)."
+                        },
+                        "protocol": {
+                            "type": "string",
+                            "description": "The protocol associated with the request, e.g: 'http'"
+                        },
+                        "host": {
+                            "title": "Host",
+                            "description": "The host for the URL, e.g: api.yourdomain.com. Can be stored as a string or as an array of strings.",
+                            "oneOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "description": "The host, split into subdomain strings."
+                                }
+                            ]
+                        },
+                        "path": {
+                            "oneOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "array",
+                                    "description": "The complete path of the current url, broken down into segments. A segment could be a string, or a path variable.",
+                                    "items": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "object",
+                                                "properties": {
+                                                    "type": {
+                                                        "type": "string"
+                                                    },
+                                                    "value": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        "port": {
+                            "type": "string",
+                            "description": "The port number present in this URL. An empty value implies 80/443 depending on whether the protocol field contains http/https."
+                        },
+                        "query": {
+                            "type": "array",
+                            "description": "An array of QueryParams, which is the query string part of the URL, parsed into separate variables.",
+                            "items": {
+                                "type": "object",
+                                "title": "QueryParam",
+                                "properties": {
+                                    "key": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    },
+                                    "value": {
+                                        "oneOf": [
+                                            {
+                                                "type": "string"
+                                            },
+                                            {
+                                                "type": "null"
+                                            }
+                                        ]
+                                    },
+                                    "description": {
+                                        "type": "string",
+                                        "description": "A description of the query parameter and its purpose."
+                                    }
+                                }
+                            }
+                        },
+                        "variable": {
+                            "type": "array",
+                            "description": "Supports path variables with the syntax `/path/:variableName/to/somewhere`. These variables are stored in this field.",
+                            "items": {
+                                "$ref": "#/$defs/Variable"
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "string"
+                }
+            ]
+        },
+        "Variable": {
+            "title": "Variable",
+            "description": "Using variables in your xrMCP requests eliminates the need to duplicate requests. Variables can be defined, and referenced from any part of a request.",
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "A variable key is a human friendly value that identifies the variable. In traditional terms, this would be a variable name."
+                },
+                "value": {
+                    "description": "The value that a variable holds. Ultimately, the variables will be replaced by this value when running a set of requests."
+                },
+                "type": {
+                    "type": "string",
+                    "description": "A variable may have multiple types. This field specifies the type of the variable.",
+                    "enum": [
+                        "string",
+                        "boolean",
+                        "any",
+                        "number"
+                    ]
+                },
+                "description": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "key",
+                "value"
+            ]
+        },
+        "AuthAttribute": {
+            "type": "object",
+            "title": "AuthAttribute",
+            "description": "Represents an attribute for any authorization method provided by xrMCP. For example `username` and `password` are set as auth attributes for Basic Authentication method.",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "value": {},
+                "type": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "key",
+                "value"
+            ]
+        },
+        "Auth": {
+            "type": "object",
+            "title": "Auth",
+            "description": "Represents authentication helpers provided by xrMCP.",
+            "required": [
+                "type"
+            ],
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "apikey",
+                        "basic",
+                        "bearer",
+                        "digest",
+                        "noauth"
+                    ]
+                },
+                "noauth": {},
+                "apikey": {
+                    "type": "array",
+                    "title": "API Key Authentication",
+                    "description": "The attributes for API Key Authentication.",
+                    "items": {
+                        "$ref": "#/$defs/AuthAttribute"
+                    }
+                },
+                "basic": {
+                    "type": "array",
+                    "title": "Basic Authentication",
+                    "description": "The attributes for Basic Authentication.",
+                    "items": {
+                        "$ref": "#/$defs/AuthAttribute"
+                    }
+                },
+                "bearer": {
+                    "type": "array",
+                    "title": "Bearer Token Authentication",
+                    "description": "The attributes for Bearer Token Authentication.",
+                    "items": {
+                        "$ref": "#/$defs/AuthAttribute"
+                    }
+                },
+                "digest": {
+                    "type": "array",
+                    "title": "Digest Authentication",
+                    "description": "The attributes for Digest Authentication.",
+                    "items": {
+                        "$ref": "#/$defs/AuthAttribute"
+                    }
+                }
+            }
+        },
+        "ProxyConfig": {
+            "title": "Proxy Config",
+            "description": "Proxy configuration for outbound requests made by xrMCP for a particular URL match.",
+            "type": "object",
+            "properties": {
+                "match": {
+                    "type": "string",
+                    "default": "http+https://*/*",
+                    "description": "The URL match pattern for which the proxy config is defined."
+                },
+                "host": {
+                    "type": "string",
+                    "description": "The proxy server host."
+                },
+                "port": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 8080,
+                    "description": "The proxy server port."
+                },
+                "tunnel": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "The tunneling details for the proxy config."
+                }
+            }
+        },
+        "Certificate": {
+            "title": "Certificate",
+            "description": "A representation of an SSL certificate used for mutual TLS authentication.",
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "A name for the certificate for user reference."
+                },
+                "matches": {
+                    "type": "array",
+                    "description": "A list of URL match pattern strings to identify URLs this certificate can be used for.",
+                    "items": {
+                        "type": "string",
+                        "description": "A URL match pattern string."
+                    }
+                },
+                "key": {
+                    "type": "object",
+                    "description": "An object containing the path to the file containing the private key on the file system.",
+                    "properties": {
+                        "src": {
+                            "description": "The path to the file containing the key for the certificate on the file system."
+                        }
+                    }
+                },
+                "cert": {
+                    "type": "object",
+                    "description": "An object containing the path to the certificate file on the file system.",
+                    "properties": {
+                        "src": {
+                            "description": "The path to the certificate file on the file system."
+                        }
+                    }
+                },
+                "passphrase": {
+                    "type": "string",
+                    "description": "The passphrase for the certificate."
+                }
+            }
+        },
+        "Header": {
+            "type": "object",
+            "title": "Header",
+            "description": "Represents a single HTTP Header.",
+            "required": [
+                "key",
+                "value"
+            ],
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "The LHS of the HTTP Header, e.g `Content-Type` or `X-Custom-Header`."
+                },
+                "value": {
+                    "type": "string",
+                    "description": "The value (RHS) of the Header."
+                },
+                "description": {
+                    "type": "string"
+                }
+            }
+        },
+        "HeaderList": {
+            "title": "Header List",
+            "description": "A list of HTTP headers.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/Header"
+            }
+        },
+        "Request": {
+            "type": "object",
+            "title": "Request",
+            "description": "Defines the structure of an HTTP request.",
+            "properties": {
+                "url": {
+                    "$ref": "#/$defs/Url"
+                },
+                "auth": {
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "$ref": "#/$defs/Auth"
+                        }
+                    ]
+                },
+                "proxy": {
+                    "$ref": "#/$defs/ProxyConfig"
+                },
+                "certificate": {
+                    "$ref": "#/$defs/Certificate"
+                },
+                "method": {
+                    "anyOf": [
+                        {
+                            "type": "string",
+                            "description": "The standard HTTP method associated with this request.",
+                            "enum": [
+                                "GET",
+                                "PUT",
+                                "POST",
+                                "PATCH",
+                                "DELETE",
+                                "COPY",
+                                "HEAD",
+                                "OPTIONS",
+                                "LINK",
+                                "UNLINK",
+                                "PURGE",
+                                "LOCK",
+                                "UNLOCK",
+                                "PROPFIND",
+                                "VIEW"
+                            ]
+                        },
+                        {
+                            "type": "string",
+                            "description": "A custom HTTP method associated with this request."
+                        }
+                    ]
+                },
+                "description": {
+                    "type": "string"
+                },
+                "header": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/HeaderList"
+                        },
+                        {
+                            "type": "string"
+                        }
+                    ]
+                },
+                "body": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "description": "The data contained in the request body.",
+                            "properties": {
+                                "mode": {
+                                    "type": "string",
+                                    "description": "The type of data associated with this request.",
+                                    "enum": [
+                                        "raw",
+                                        "urlencoded",
+                                        "formdata",
+                                        "file",
+                                        "graphql"
+                                    ]
+                                },
+                                "raw": {
+                                    "type": "string"
+                                },
+                                "urlencoded": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "title": "UrlEncodedParameter",
+                                        "required": [
+                                            "key",
+                                            "value"
+                                        ],
+                                        "properties": {
+                                            "key": {
+                                                "type": "string"
+                                            },
+                                            "value": {
+                                                "type": "string"
+                                            },
+                                            "description": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                },
+                                "formdata": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "title": "FormParameter",
+                                        "anyOf": [
+                                            {
+                                                "required": [
+                                                    "key"
+                                                ],
+                                                "properties": {
+                                                    "key": {
+                                                        "type": "string"
+                                                    },
+                                                    "value": {
+                                                        "type": "string"
+                                                    },
+                                                    "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "text"
+                                                        ]
+                                                    },
+                                                    "contentType": {
+                                                        "type": "string",
+                                                        "description": "Override the Content-Type header for this form data entity."
+                                                    },
+                                                    "description": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            },
+                                            {
+                                                "required": [
+                                                    "key"
+                                                ],
+                                                "properties": {
+                                                    "key": {
+                                                        "type": "string"
+                                                    },
+                                                    "src": {
+                                                        "oneOf": [
+                                                            {
+                                                                "type": "string"
+                                                            },
+                                                            {
+                                                                "type": "null"
+                                                            },
+                                                            {
+                                                                "type": "array"
+                                                            }
+                                                        ]
+                                                    },
+                                                    "type": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                            "file"
+                                                        ]
+                                                    },
+                                                    "contentType": {
+                                                        "type": "string",
+                                                        "description": "Override the Content-Type header for this form data entity."
+                                                    },
+                                                    "description": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                },
+                                "graphql": {
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ]
+                }
+            },
+            "additionalProperties": false
+        },
+        "OutputMappingEntry": {
+            "type": "object",
+            "description": "Extracts a value from a specific execution's processed output using a JSONPath expression.",
+            "required": [
+                "from",
+                "path"
+            ],
+            "properties": {
+                "from": {
+                    "type": "string",
+                    "description": "The id of the ApiExecution whose processed output is the source. Must match an ApiExecution.id value in the same manifest."
+                },
+                "path": {
+                    "$ref": "#/$defs/JsonPathExpression",
+                    "description": "JSONPath expression applied to the named execution's processed output. Use $ to select the entire output."
+                }
+            },
+            "additionalProperties": false
+        },
+        "OutputMapper": {
+            "type": "object",
+            "description": "Defines how individual execution outputs are combined into the final tool output. mode=last (default) returns the processed output of the last execution by order. mode=merge shallow-merges all execution outputs in order (later executions overwrite keys). mode=map assembles the final output from explicit per-key extraction rules defined in mapping.",
+            "required": [
+                "mode"
+            ],
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "last",
+                        "merge",
+                        "map"
+                    ]
+                },
+                "mapping": {
+                    "type": "object",
+                    "description": "Required when mode=map. Each key in the output object maps to a source value extracted from a specific execution's processed output.",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                        "$ref": "#/$defs/OutputMappingEntry"
+                    }
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "mode": {
+                                "const": "map"
+                            }
+                        },
+                        "required": [
+                            "mode"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "mapping"
+                        ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "mode": {
+                                "enum": [
+                                    "last",
+                                    "merge"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "mode"
+                        ]
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "mapping"
+                            ]
+                        }
+                    }
+                }
+            ],
+            "additionalProperties": false
+        },
+        "ResponseFilter": {
+            "type": "object",
+            "description": "Filter stage for response processing. mode=all passes payload unchanged, mode=select keeps only selected fields, and mode=none produces empty output and skips mapper.",
+            "required": [
+                "mode"
+            ],
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "select",
+                        "all",
+                        "none"
+                    ]
+                },
+                "fields": {
+                    "type": "array",
+                    "description": "Selector paths used only when mode=select. When the payload is a root-level array, prefix selectors with []. to project each element, e.g. [].id or [].owner.email. For object payloads, supported styles include name, owner.email, items[].sku, and items[].meta.tag. Maximum depth is 3 field segments.",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\[\\])?(\\.[A-Za-z_][A-Za-z0-9_]*(\\[\\])?){0,2}$"
+                    },
+                    "uniqueItems": true
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "mode": {
+                                "const": "select"
+                            }
+                        },
+                        "required": [
+                            "mode"
+                        ]
+                    },
+                    "then": {
+                        "required": [
+                            "fields"
+                        ]
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "mode": {
+                                "enum": [
+                                    "all",
+                                    "none"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "mode"
+                        ]
+                    },
+                    "then": {
+                        "not": {
+                            "required": [
+                                "fields"
+                            ]
+                        }
+                    }
+                }
+            ],
+            "additionalProperties": false
+        },
+        "ResponseMapper": {
+            "type": "object",
+            "description": "Mapper stage for response processing. This stage remaps fields using JSONPath expressions.",
+            "required": [
+                "mode",
+                "mapping"
+            ],
+            "properties": {
+                "mode": {
+                    "const": "jsonpath"
+                },
+                "mapping": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "additionalProperties": {
+                        "$ref": "#/$defs/JsonPathExpression"
+                    }
+                },
+                "allow_missing": {
+                    "type": "boolean",
+                    "description": "When true, jsonpath expressions that fail to match any value will result in a null value for that key instead of an error. This is useful when mapping optional fields that may not be present in all executions. Default is true.",
+                    "default": true
+                 }
+            },
+            "additionalProperties": false
+        },
+        "ResponseProcessor": {
+            "type": "object",
+            "description": "Response processing configuration. Can have empty (no filter/mapper), one stage, or both stages. Example select+mapper: { \"filter\": {\"mode\": \"select\", \"fields\": [\"name\", \"owner.email\", \"items[].sku\"]}, \"mapper\": {\"mode\": \"jsonpath\", \"mapping\": {\"projectName\": \"$.name\"}} }. Example filter only: { \"filter\": {\"mode\": \"all\"} }. Example mapper only: { \"mapper\": {\"mode\": \"jsonpath\", \"mapping\": {...}} }. Example none: { \"filter\": {\"mode\": \"none\"} } (none means empty output and mapper is skipped).",
+            "properties": {
+                "filter": {
+                    "$ref": "#/$defs/ResponseFilter"
+                },
+                "mapper": {
+                    "$ref": "#/$defs/ResponseMapper"
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "filter": {
+                                "type": "object",
+                                "properties": {
+                                    "mode": {
+                                        "const": "none"
+                                    }
+                                },
+                                "required": [
+                                    "mode"
+                                ]
+                            }
+                        },
+                        "required": [
+                            "filter"
+                        ]
+                    },
+                    "then": {
+                        "properties": {
+                            "mapper": false
+                        }
+                    }
+                }
+            ],
+            "additionalProperties": false
+        },
+        "Permissions": {
+            "type": "object",
+            "properties": {
+                "network": {
+                    "type": "array",
+                    "description": "Outbound network destinations this tool is permitted to contact. The runtime should treat these entries as an allowlist.",
+                    "items": {
+                        "$ref": "#/$defs/NetworkPermission"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                },
+                "secrets": {
+                    "type": "array",
+                    "description": "Secret identifiers this tool may reference during template substitution or authentication setup.",
+                    "items": {
+                        "$ref": "#/$defs/SecretPermission"
+                    },
+                    "uniqueItems": true,
+                    "default": []
+                },
+                "risk": {
+                    "type": "string",
+                    "enum": [
+                        "read_only",
+                        "write",
+                        "destructive"
+                    ],
+                    "default": "read_only"
+                },
+                "requiresApproval": {
+                    "type": "boolean",
+                    "description": "Whether a human approval step is required before installation or execution, depending on runtime policy.",
+                    "default": false
+                }
+            },
+            "additionalProperties": false
+        },
+        "ToolRegistration": {
+            "type": "object",
+            "required": [
+                "tool"
+            ],
+            "properties": {
+                "tool": {
+                    "$ref": "#/$defs/ToolManifest"
+                },
+                "config": {
+                    "type": "object",
+                    "description": "Runtime values injected into the tool, such as baseUrl or install-specific settings. When tool.configSchema is present, the runtime should validate this object against that schema before registration.",
+                    "default": {},
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": false
+        },
+        "ToolRegistrationResult": {
+            "type": "object",
+            "required": [
+                "name",
+                "status"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "registered",
+                        "updated",
+                        "rejected"
+                    ]
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/Error"
+                    }
+                }
+            },
+            "additionalProperties": false
+        },
+        "ToolBundle": {
+            "type": "object",
+            "required": [
+                "schemaVersion",
+                "name",
+                "tools"
+            ],
+            "properties": {
+                "schemaVersion": {
+                    "type": "string",
+                    "const": "xrmcp.v0.1.0"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/ToolManifest"
+                    },
+                    "minItems": 1
+                },
+                "metadata": {
+                    "$ref": "#/$defs/Metadata"
+                }
+            },
+            "additionalProperties": false
+        },
+        "InstalledTool": {
+            "type": "object",
+            "required": [
+                "name",
+                "type"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "$ref": "#/$defs/ToolType"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "registeredAt": {
+                    "type": "string",
+                    "format": "date-time"
+                },
+                "metadata": {
+                    "$ref": "#/$defs/Metadata"
+                }
+            },
+            "additionalProperties": false
+        },
+        "Error": {
+            "type": "object",
+            "required": [
+                "code",
+                "message"
+            ],
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "details": {}
+            },
+            "additionalProperties": false
+        },
+        "Metadata": {
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "license": {
+                    "type": "string"
+                },
+                "homepage": {
+                    "type": "string",
+                    "format": "uri"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            },
+            "additionalProperties": true
+        },
+        "JsonSchema": {
+            "type": "object",
+            "minProperties": 1,
+            "description": "Pragmatic JSON Schema subset used by xrMCP manifest fields. This definition is intentionally narrower than full draft 2020-12 but allows common schema keywords and extension keywords.",
+            "properties": {
+                "$id": {
+                    "type": "string",
+                    "format": "uri-reference"
+                },
+                "$schema": {
+                    "type": "string",
+                    "format": "uri"
+                },
+                "$ref": {
+                    "type": "string",
+                    "format": "uri-reference"
+                },
+                "$defs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/$defs/JsonSchema"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "type": {
+                    "oneOf": [
+                        {
+                            "type": "string",
+                            "enum": [
+                                "object",
+                                "array",
+                                "string",
+                                "number",
+                                "integer",
+                                "boolean",
+                                "null"
+                            ]
+                        },
+                        {
+                            "type": "array",
+                            "minItems": 1,
+                            "uniqueItems": true,
+                            "items": {
+                                "type": "string",
+                                "enum": [
+                                    "object",
+                                    "array",
+                                    "string",
+                                    "number",
+                                    "integer",
+                                    "boolean",
+                                    "null"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                "properties": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/$defs/JsonSchema"
+                    }
+                },
+                "required": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "uniqueItems": true
+                },
+                "items": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/JsonSchema"
+                        },
+                        {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/$defs/JsonSchema"
+                            }
+                        }
+                    ]
+                },
+                "prefixItems": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/JsonSchema"
+                    }
+                },
+                "additionalProperties": {
+                    "oneOf": [
+                        {
+                            "type": "boolean"
+                        },
+                        {
+                            "$ref": "#/$defs/JsonSchema"
+                        }
+                    ]
+                },
+                "enum": {
+                    "type": "array"
+                },
+                "const": {},
+                "default": {},
+                "format": {
+                    "type": "string"
+                },
+                "pattern": {
+                    "type": "string"
+                },
+                "minimum": {
+                    "type": "number"
+                },
+                "maximum": {
+                    "type": "number"
+                },
+                "exclusiveMinimum": {
+                    "type": "number"
+                },
+                "exclusiveMaximum": {
+                    "type": "number"
+                },
+                "minLength": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "maxLength": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "minItems": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "maxItems": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "minProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "maxProperties": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "oneOf": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/JsonSchema"
+                    }
+                },
+                "anyOf": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/JsonSchema"
+                    }
+                },
+                "allOf": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/$defs/JsonSchema"
+                    }
+                },
+                "not": {
+                    "$ref": "#/$defs/JsonSchema"
+                }
+            },
+            "additionalProperties": true
+        }
+    }
+}

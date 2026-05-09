@@ -1,0 +1,69 @@
+{
+    "tool": {
+        "schemaVersion": "xrmcp.v0.1.0",
+        "name": "get_post",
+        "description": "Fetch a post from JSONPlaceholder by post id",
+        "type": "api",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "postId": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            },
+            "required": [
+                "postId"
+            ]
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "userId": {
+                    "type": "integer"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "body": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "id",
+                "userId",
+                "title",
+                "body"
+            ]
+        },
+        "permissions": {
+            "network": [
+                "jsonplaceholder.typicode.com"
+            ],
+            "risk": "read_only"
+        },
+        "executions": [
+            {
+                "type": "api",
+                "request": {
+                    "method": "GET",
+                    "url": "https://jsonplaceholder.typicode.com/posts/{{input.postId}}"
+                },
+                "processor": {
+                    "mapper": {
+                        "mode": "jsonpath",
+                        "mapping": {
+                            "id": "$.id",
+                            "userId": "$.userId",
+                            "title": "$.title",
+                            "body": "$.body"
+                        }
+                    }
+                }
+            }
+        ]
+    }
+}

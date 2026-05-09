@@ -1,0 +1,62 @@
+{
+    "tool": {
+        "schemaVersion": "xrmcp.v0.1.0",
+        "name": "list_posts",
+        "description": "List posts from JSONPlaceholder",
+        "type": "api",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+            },
+            "additionalProperties": false
+        },
+        "outputSchema": {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "title": {
+                                "type": "string"
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "title"
+                        ],
+                        "additionalProperties": false
+                    }
+                }
+            }
+        },
+        "permissions": {
+            "network": [
+                "jsonplaceholder.typicode.com"
+            ],
+            "risk": "read_only"
+        },
+        "executions": [
+            {
+                "type": "api",
+                "request": {
+                    "method": "GET",
+                    "url": "https://jsonplaceholder.typicode.com/posts"
+                },
+                "processor": {
+                    "filter": {
+                        "mode": "select",
+                        "fields": [
+                            "result[].id",
+                            "result[].title"
+                        ]
+                    }
+                }
+            }
+        ]
+    }
+}
