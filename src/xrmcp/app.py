@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 import os
 
 from starlette.applications import Starlette
@@ -12,6 +13,24 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 
 from xrmcp.server import XRMCPRuntime
 
+logger = logging.getLogger(__name__)
+
+
+def load_api_auth_config_from_env() -> tuple[str, str]:
+    mode = os.getenv("XRMCP_API_AUTH_MODE", "").strip().lower() or "none"
+    token = os.getenv("XRMCP_API_TOKEN", "")
+
+    if mode not in {"none", "bearer"}:
+        raise RuntimeError(f'unsupported XRMCP_API_AUTH_MODE "{mode}"')
+    if mode == "bearer" and not token.strip():
+        raise RuntimeError("XRMCP_API_TOKEN is required when XRMCP_API_AUTH_MODE=bearer")
+    if mode == "none" and not os.getenv("XRMCP_API_AUTH_MODE") and not os.getenv("XRMCP_API_TOKEN"):
+        logger.warning(
+            "xrMCP REST management API is running in development mode with no auth. "
+            "To enable auth set XRMCP_API_AUTH_MODE=bearer and XRMCP_API_TOKEN=<token>"
+        )
+    return mode, token
+
 
 class MCPStreamableHTTPApp:
     def __init__(self, session_manager: StreamableHTTPSessionManager) -> None:
@@ -22,6 +41,7 @@ class MCPStreamableHTTPApp:
 
 
 def create_app(runtime: XRMCPRuntime | None = None) -> Starlette:
+    auth_mode, auth_token = load_api_auth_config_from_env()
     runtime = runtime or XRMCPRuntime(registry_store_path=os.getenv("XRMCP_STORE_PATH"))
     session_manager = StreamableHTTPSessionManager(
         runtime.server,
@@ -37,15 +57,36 @@ def create_app(runtime: XRMCPRuntime | None = None) -> Starlette:
             finally:
                 await runtime.aclose()
 
+    def require_admin_auth(request: Request) -> Response | None:
+        if auth_mode != "bearer":
+            return None
+
+        header = request.headers.get("authorization", "").strip()
+        prefix = "Bearer "
+        if not header.startswith(prefix):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        if header.removeprefix(prefix).strip() != auth_token:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        return None
+
     async def register_tool(request: Request) -> Response:
+        unauthorized = require_admin_auth(request)
+        if unauthorized is not None:
+            return unauthorized
         payload = await request.json()
         status_code, body = runtime.register_tool(payload)
         return JSONResponse(body, status_code=status_code)
 
-    async def list_installed(_: Request) -> Response:
+    async def list_installed(request: Request) -> Response:
+        unauthorized = require_admin_auth(request)
+        if unauthorized is not None:
+            return unauthorized
         return JSONResponse({"tools": runtime.dump_installed_tools()})
 
     async def unregister_tool(request: Request) -> Response:
+        unauthorized = require_admin_auth(request)
+        if unauthorized is not None:
+            return unauthorized
         name = request.path_params["name"]
         status_code, body = runtime.unregister_tool(name)
         if body is None:

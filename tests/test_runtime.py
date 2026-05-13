@@ -15,6 +15,8 @@ from xrmcp.server import XRMCPRuntime
 @pytest.fixture(autouse=True)
 def isolate_registry_store(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("XRMCP_STORE_PATH", str(tmp_path / "tools.json"))
+    monkeypatch.delenv("XRMCP_API_AUTH_MODE", raising=False)
+    monkeypatch.delenv("XRMCP_API_TOKEN", raising=False)
 
 
 def build_registration() -> dict:
@@ -198,6 +200,69 @@ def test_register_endpoint() -> None:
 
     assert response.status_code == 200
     assert response.json()["name"] == "read_ticket"
+
+
+def test_register_endpoint_requires_bearer_token(monkeypatch) -> None:
+    monkeypatch.setenv("XRMCP_API_AUTH_MODE", "bearer")
+    monkeypatch.setenv("XRMCP_API_TOKEN", "secret-token")
+
+    app = create_app(XRMCPRuntime())
+
+    with TestClient(app) as client:
+        response = client.post("/tools/register", json=build_registration())
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "unauthorized"}
+
+
+def test_register_endpoint_rejects_wrong_bearer_token(monkeypatch) -> None:
+    monkeypatch.setenv("XRMCP_API_AUTH_MODE", "bearer")
+    monkeypatch.setenv("XRMCP_API_TOKEN", "secret-token")
+
+    app = create_app(XRMCPRuntime())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/tools/register",
+            json=build_registration(),
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+
+    assert response.status_code == 401
+    assert response.json() == {"error": "unauthorized"}
+
+
+def test_register_endpoint_accepts_matching_bearer_token(monkeypatch) -> None:
+    monkeypatch.setenv("XRMCP_API_AUTH_MODE", "bearer")
+    monkeypatch.setenv("XRMCP_API_TOKEN", "secret-token")
+
+    app = create_app(XRMCPRuntime())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/tools/register",
+            json=build_registration(),
+            headers={"Authorization": "Bearer secret-token"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "read_ticket"
+
+
+def test_create_app_fails_when_bearer_mode_has_no_token(monkeypatch) -> None:
+    monkeypatch.setenv("XRMCP_API_AUTH_MODE", "bearer")
+
+    with pytest.raises(RuntimeError, match="XRMCP_API_TOKEN is required"):
+        create_app(XRMCPRuntime())
+
+
+def test_create_app_warns_in_dev_mode_without_rest_auth(caplog) -> None:
+    runtime = XRMCPRuntime()
+
+    with caplog.at_level(logging.WARNING):
+        create_app(runtime)
+
+    assert "development mode with no auth" in caplog.text
 
 
 # ---------------------------------------------------------------------------

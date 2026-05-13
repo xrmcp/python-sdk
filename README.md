@@ -25,14 +25,44 @@ See [`examples/getting-started/`](examples/getting-started/) for a minimal host 
 ```bash
 # Using curl
 curl -X POST http://127.0.0.1:7373/tools/register \
+  -H 'authorization: Bearer my-secret-token' \
   -H 'content-type: application/json' \
   -d @examples/getting-started/registry/jsonph/list_posts.xrmcp.json
 
 # Using the CLI
-xrmcp tool install examples/getting-started/registry/jsonph/list_posts.xrmcp.json
+XRMCP_API_TOKEN=my-secret-token xrmcp tool install examples/getting-started/registry/jsonph/list_posts.xrmcp.json
 ```
 
 Tool manifests follow [`specification/v0.1.0/schema.json`](specification/v0.1.0/schema.json).
+
+## REST API auth
+
+The management endpoints:
+
+- `POST /tools/register`
+- `GET /tools/list-installed`
+- `DELETE /tools/{name}`
+
+support these environment variables:
+
+- `XRMCP_API_AUTH_MODE` — `none` or `bearer` (default: `none`)
+- `XRMCP_API_TOKEN` — required when `XRMCP_API_AUTH_MODE=bearer`
+
+When bearer auth is enabled, clients must send:
+
+```http
+Authorization: Bearer <token>
+```
+
+If neither auth variable is set, app creation logs a warning that the REST API is running in development mode without auth.
+
+Example:
+
+```bash
+export XRMCP_API_AUTH_MODE=bearer
+export XRMCP_API_TOKEN=my-secret-token
+uvicorn xrmcp.app:create_app --factory --host 127.0.0.1 --port 7373
+```
 
 ## Current scope
 
@@ -58,4 +88,3 @@ runtime = XRMCPRuntime(secret_store=VaultSecretStore())
 ## Limitations
 
 - `permissions.network` uses a minimal allowlist check
-- REST endpoints (`/tools/*`) are unauthenticated — authentication coming soon
